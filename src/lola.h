@@ -5,19 +5,24 @@
 #include <string>
 #include <vector>
 #include <dlfcn.h>
-
+#include <cstring>
+#include <fstream>
+#include "json.hpp"
 #include "log.h"
 
+#define MAX_SAMPLES 4096 * 2
+
 typedef enum {
-    CONTROL,
-    AUDIO,
-    MIDI,
-    FILE,
-    TOGGLE,
-    TRIGGER,
+    lCONTROL,
+    lAUDIO,
+    lMIDI,
+    lFILE,
+    lTOGGLE,
+    lTRIGGER,
 } PortType;
 
 class Control {
+public:
     PortType type;
     int index;
     float min;
@@ -28,6 +33,7 @@ class Control {
 };
 
 class Plugin {
+public:
     std::string uri;
     int index;
     int sampleRate;
@@ -38,13 +44,23 @@ class Plugin {
     std::string sofile;
     std::string bundle;
 
+    nlohmann::json config;
+
     void * dlhandle;
     LV2_Descriptor *descriptor;
     LV2_Handle *handle;
 
     std::vector<Control> controls;
+
+    float * audioIn = nullptr;
+    float * audioIn2 = nullptr;
+
+    float * audioOut = nullptr;
+    float * audioOut2 = nullptr;
     
-    Plugin(std::string sofile, std::string bundle, int index, int sampleRate);
+    Plugin(std::string config, int index, int sampleRate);
+    // void printInfo();
+    bool loadControls();
 };
 
 #endif // __LOLA_H__

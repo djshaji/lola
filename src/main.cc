@@ -7,6 +7,11 @@
 
 */
 
+#include <iostream>
+#include <dlfcn.h>
+#include "lola.h"
+
 int main(int argc, char **argv) {
+    Plugin plugin("dyson_compress-swh.lv2/plugin.json", 0, 44100);
     return 0;
 }
