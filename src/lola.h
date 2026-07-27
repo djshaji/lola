@@ -50,14 +50,24 @@ public:
     LV2_Descriptor *descriptor;
     LV2_Handle *handle;
 
+    LV2_Handle *(*instantiate)(const LV2_Descriptor *descriptor, double sample_rate, const char *bundle_path, const LV2_Feature *const *features);
+     connect_port;
+    void * activate;
+    void * run;
+    void * deactivate;
+
     std::vector<Control> controls;
 
-    float * audioIn = nullptr;
-    float * audioIn2 = nullptr;
+    int audioIn = -1;
+    int audioIn2 = -1;
 
-    float * audioOut = nullptr;
-    float * audioOut2 = nullptr;
-    
+    int audioOut = -1;
+    int audioOut2 = -1;
+
+    // atom port for sending file names
+    int atomPort = -1;
+    void * atomBuffer = nullptr;
+
     Plugin(std::string config, int index, int sampleRate);
     // void printInfo();
     bool loadControls();

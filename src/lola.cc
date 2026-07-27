@@ -44,6 +44,8 @@ Plugin::Plugin(std::string config, int index, int sampleRate) {
         return;
     }
 
+    instantiate = (void *) descriptor->instantiate;
+
     LOGD("Successfully loaded LV2 plugin: %s\n", sofile.c_str());
     loadControls();
 }
@@ -82,18 +84,21 @@ bool Plugin::loadControls() {
         if (control.type != PortType::lCONTROL) {
             if (control.type == PortType::lAUDIO) {
                 if (port ["direction"] == "input") {
-                    if (audioIn == nullptr) {
-                        audioIn = new float[MAX_SAMPLES];
-                    } else if (audioIn2 == nullptr) {
-                        audioIn2 = new float[MAX_SAMPLES];
+                    if (audioIn == -1) {
+                        audioIn = index++;
+                    } else if (audioIn2 == -1) {
+                        audioIn2 = index++;
                     }
                 } else if (port["direction"] == "output") {
-                    if (audioOut == nullptr) {
-                        audioOut = new float[MAX_SAMPLES];
-                    } else if (audioOut2 == nullptr) {
-                        audioOut2 = new float[MAX_SAMPLES];
+                    if (audioOut == -1) {
+                        audioOut = index++;
+                    } else if (audioOut2 == -1) {
+                        audioOut2 = index++;
                     }
                 }
+            } else if (control.type == PortType::lFILE) {
+                atomPort = index++;
+                atomBuffer = malloc(MAX_SAMPLES * sizeof(float));
             }
 
             continue;
