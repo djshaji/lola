@@ -8,6 +8,7 @@ Plugin::Plugin(std::string config, int index, int sampleRate) {
         LOGE("Failed to open config file: %s\n", config.c_str());
         return;
     }
+
     json j;
     file >> j;
     j = j[index];
@@ -37,16 +38,15 @@ Plugin::Plugin(std::string config, int index, int sampleRate) {
         return;
     }
 
-    handle = (LV2_Handle *) descriptor->instantiate(descriptor, sampleRate, nullptr, nullptr);
+    handle = descriptor->instantiate(descriptor, sampleRate, nullptr, nullptr);
     if (!handle) {
         LOGE("Failed to instantiate LV2 plugin: %s\n", sofile.c_str());
         dlclose(dlhandle);
         return;
     }
 
-    instantiate = (void *) descriptor->instantiate;
-
     LOGD("Successfully loaded LV2 plugin: %s\n", sofile.c_str());
+
     loadControls();
 }
 
@@ -83,22 +83,24 @@ bool Plugin::loadControls() {
 
         if (control.type != PortType::lCONTROL) {
             if (control.type == PortType::lAUDIO) {
-                if (port ["direction"] == "input") {
+                if (port["direction"] == "input") {
                     if (audioIn == -1) {
-                        audioIn = index++;
+                        audioIn = control.index;
                     } else if (audioIn2 == -1) {
-                        audioIn2 = index++;
+                        audioIn2 = control.index;
                     }
                 } else if (port["direction"] == "output") {
                     if (audioOut == -1) {
-                        audioOut = index++;
+                        audioOut = control.index;
                     } else if (audioOut2 == -1) {
-                        audioOut2 = index++;
+                        audioOut2 = control.index;
                     }
                 }
             } else if (control.type == PortType::lFILE) {
-                atomPort = index++;
+                atomPort = control.index;
                 atomBuffer = malloc(MAX_SAMPLES * sizeof(float));
+            } else {
+                LOGE("Unsupported port type: %s\n", type.c_str());
             }
 
             continue;
@@ -107,12 +109,34 @@ bool Plugin::loadControls() {
         control.min = port["minimum"];
         control.max = port["maximum"];
         control.def = port["default"];
-        control.value = port["default"];
+        control.value = new float(control.def);
         control.name = port["name"];
+
+        descriptor->connect_port(handle, control.index, control.value);
 
         controls.push_back(control);
     }
  
-    OUT
+    descriptor->activate(handle);
+    LOGD("Plugin loaded successfully\n");
     return true;
+}
+
+int Plugin::process (float *in, float *out, int nframes) {
+    IN
+    if (audioIn == -1 || audioOut == -1) {
+        LOGE("Audio ports not connected\n");
+        return -1;
+    }
+
+    descriptor->connect_port(handle, audioIn, in);
+    descriptor->connect_port(handle, audioOut, out);
+
+    if (audioIn2 != -1 && audioOut2 != -1) {
+        descriptor->connect_port(handle, audioIn2, in + nframes);
+        descriptor->connect_port(handle, audioOut2, out + nframes);
+    }
+
+    descriptor->run(handle, nframes);
+    return 0;
 }

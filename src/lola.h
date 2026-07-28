@@ -28,7 +28,7 @@ public:
     float min;
     float max;
     float def;
-    float value;
+    float * value;
     std::string name;
 };
 
@@ -48,13 +48,7 @@ public:
 
     void * dlhandle;
     LV2_Descriptor *descriptor;
-    LV2_Handle *handle;
-
-    LV2_Handle *(*instantiate)(const LV2_Descriptor *descriptor, double sample_rate, const char *bundle_path, const LV2_Feature *const *features);
-     connect_port;
-    void * activate;
-    void * run;
-    void * deactivate;
+    LV2_Handle handle;
 
     std::vector<Control> controls;
 
@@ -71,6 +65,7 @@ public:
     Plugin(std::string config, int index, int sampleRate);
     // void printInfo();
     bool loadControls();
+    int process(float *in, float *out, int nframes);
 };
 
 #endif // __LOLA_H__
