@@ -1,0 +1,20 @@
+{
+  "description": "Minimal atom:Path and worker/state fixture derived from the Ratatouille LV2 bundle.",
+  "pathProperties": [
+    "urn:brummer:ratatouille#Neural_Model",
+    "urn:brummer:ratatouille#Neural_Model1",
+    "urn:brummer:ratatouille#irfile",
+    "urn:brummer:ratatouille#irfile1"
+  ],
+  "workerFeatures": [
+    "http://lv2plug.in/ns/ext/worker#schedule"
+  ],
+  "stateFeatures": [
+    "http://lv2plug.in/ns/ext/state#interface"
+  ],
+  "patchMessages": [
+    "patch:set",
+    "patch:put",
+    "patch:delete"
+  ]
+}

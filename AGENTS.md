@@ -38,6 +38,13 @@ Guidance for AI coding agents working in this repository.
   - Internal logging through `LOG*` macros
 - Keep changes minimal and targeted. Avoid broad refactors unless requested.
 - Preserve current public API shape unless the task explicitly asks for API changes.
+- When working on the TTL parsing helper in [tools/ttl_parse.py](tools/ttl_parse.py), prefer small, explicit RDF extraction changes and verify them with `python tools/ttl_parse.py <file-or-bundle>`.
+
+## Practical Repo Notes
+
+- The main C++ implementation lives in [src](src); the Python helper in [tools/ttl_parse.py](tools/ttl_parse.py) is supplemental and should not be treated as the primary runtime path.
+- LV2 bundles in [src/dyson_compress-swh.lv2](src/dyson_compress-swh.lv2) are useful fixtures for testing parser behavior.
+- There is no verified build or test harness yet, so do not claim compilation or test success without running a command and reporting the actual result.
 
 ## Safety and Correctness Priorities
 

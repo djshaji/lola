@@ -1,0 +1,35 @@
+{
+  "pluginUri": "urn:brummer:ratatouille",
+  "requiredFeatures": [
+    "http://lv2plug.in/ns/ext/urid#map",
+    "http://lv2plug.in/ns/ext/buf-size#boundedBlockLength",
+    "http://lv2plug.in/ns/ext/worker#schedule",
+    "http://lv2plug.in/ns/ext/options#options"
+  ],
+  "extensionData": [
+    "http://lv2plug.in/ns/ext/worker#interface",
+    "http://lv2plug.in/ns/ext/state#interface"
+  ],
+  "patchWritable": [
+    "urn:brummer:ratatouille#Neural_Model",
+    "urn:brummer:ratatouille#Neural_Model1",
+    "urn:brummer:ratatouille#irfile",
+    "urn:brummer:ratatouille#irfile1"
+  ],
+  "atomPathProperties": [
+    "urn:brummer:ratatouille#Neural_Model",
+    "urn:brummer:ratatouille#Neural_Model1",
+    "urn:brummer:ratatouille#irfile",
+    "urn:brummer:ratatouille#irfile1"
+  ],
+  "atomPorts": [
+    {
+      "name": "CONTROL",
+      "supportsPatch": true
+    },
+    {
+      "name": "NOTIFY",
+      "supportsPatch": true
+    }
+  ]
+}

@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    Plugin * plugin = new Plugin("dyson_compress-swh.lv2/plugin.json", 0, jack_get_sample_rate(client));
+    Plugin * plugin = new Plugin(argv [1], 0, jack_get_sample_rate(client), jack_get_buffer_size(client));
 
     // 2. Register the real-time processing callback
     jack_set_process_callback(client, process_callback, plugin);
@@ -163,8 +163,19 @@ int main(int argc, char **argv) {
             }
             case lAUDIO:
             case lMIDI:
+                break;
             case lFILE:
-                // No GUI for these types
+                GtkWidget *file_button = gtk_file_chooser_button_new("Select File", GTK_FILE_CHOOSER_ACTION_OPEN);
+                g_signal_connect(file_button, "file-set", G_CALLBACK(+[](GtkFileChooser *chooser, gpointer user_data) {
+                    Control *control = static_cast<Control *>(user_data);
+                    char *filename = gtk_file_chooser_get_filename(chooser);
+                    // send filename to plugin via atom port
+                    if (control->value != nullptr) {
+                        // copy filename to atomBuffer
+                        strncpy((char *)control->value, filename, MAX_SAMPLES);
+                    }
+                }), &control);
+                gtk_box_pack_start(GTK_BOX(vbox), file_button, FALSE, FALSE, 0);
                 break;
         }
     }
