@@ -52,5 +52,5 @@ Implement the listed LV2 features in the loader in a sequence that preserves the
 ## Current status
 - Step 1: implemented
 - Step 2: implemented
-- Step 3: implemented and verified in the loader core
+- Step 3: implemented and verified in the loader core through host buffer-size propagation, frame limiting, and file-atom buffer sizing
 - Host-side UI build remains blocked by missing GTK development headers in this environment
