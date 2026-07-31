@@ -11,7 +11,7 @@
 #include <dlfcn.h>
 #include <jack/jack.h>
 #include <signal.h>
-
+#include <gtk/gtk.h>
 #include "lola.h"
 
 // Global client pointer to allow clean shutdown on Ctrl+C
@@ -94,6 +94,18 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    // auto connect ports to system playback and capture ports
+    const char **ports;
+    ports = jack_get_ports(client, NULL, NULL, JackPortIsPhysical | JackPortIsOutput);
+    if (ports == NULL) {
+        fprintf(stderr, "No physical capture ports available.\n");
+    } else {
+        if (jack_connect(client, ports[0], jack_port_name(input_port))) {
+            fprintf(stderr, "Cannot connect input ports.\n");
+        }
+        free(ports);
+    }
+
     // 4. Activate the client (tells the server to start calling process_callback)
     if (jack_activate(client)) {
         fprintf(stderr, "Cannot activate client.\n");
@@ -103,10 +115,62 @@ int main(int argc, char **argv) {
 
     printf("Client is active. Press Ctrl+C to exit.\n");
 
-    // Main execution thread idles here while the real-time thread runs
-    while (1) {
-        sleep(1);
+    GtkWidget *window;
+    gtk_init(&argc, &argv);
+    window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    gtk_window_set_title(GTK_WINDOW(window), "LV2 Plugin Host");
+    gtk_window_set_default_size(GTK_WINDOW(window), 400, 200);
+    g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
+
+    // create controls from plugin->controls and add to window
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    gtk_container_add(GTK_CONTAINER(window), vbox);
+    GtkWidget *label = gtk_label_new(plugin->name.c_str());
+    // large font for label
+
+
+    // toggle to turn on/off the plugin
+    GtkWidget *toggle = gtk_switch_new();
+
+    GtkWidget *header = gtk_header_bar_new();
+    gtk_header_bar_set_title(GTK_HEADER_BAR(header), plugin->name.c_str());
+    gtk_header_bar_set_subtitle(GTK_HEADER_BAR(header), plugin->description.c_str());
+    gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(header), TRUE);
+    gtk_window_set_titlebar(GTK_WINDOW(window), GTK_WIDGET(header));
+
+    gtk_box_pack_start(GTK_BOX(vbox), toggle, FALSE, FALSE, 0);
+    g_signal_connect(toggle, "state-set", G_CALLBACK(+[](GtkSwitch *widget, gboolean state, gpointer user_data) {
+        Plugin *plugin = static_cast<Plugin *>(user_data);
+        plugin->enabled = state;
+    }), plugin);
+
+    for (auto &control : plugin->controls) {
+        GtkWidget *label = gtk_label_new(control.name.c_str());
+        gtk_box_pack_start(GTK_BOX(vbox), label, FALSE, FALSE, 0);
+        switch (control.type) {
+            case lCONTROL:
+            case lTOGGLE:
+            case lTRIGGER: {
+                GtkWidget *scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, control.min, control.max, 0.01);
+                gtk_scale_set_value_pos(GTK_SCALE(scale), GTK_POS_TOP);
+                gtk_range_set_value(GTK_RANGE(scale), *(control.value));
+                g_signal_connect(scale, "value-changed", G_CALLBACK(+[](GtkRange *range, gpointer user_data) {
+                    Control *control = static_cast<Control *>(user_data);
+                    *(control->value) = gtk_range_get_value(range);
+                }), &control);
+                gtk_box_pack_start(GTK_BOX(vbox), scale, FALSE, FALSE, 0);
+                break;
+            }
+            case lAUDIO:
+            case lMIDI:
+            case lFILE:
+                // No GUI for these types
+                break;
+        }
     }
 
+    // Main execution thread idles here while the real-time thread runs
+    gtk_widget_show_all(window);
+    gtk_main();
     return 0;
 }

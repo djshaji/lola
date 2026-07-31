@@ -38,6 +38,8 @@ public:
     int index;
     int sampleRate;
 
+    bool enabled = true;
+
     std::string name;
     std::string description;
     std::string author;

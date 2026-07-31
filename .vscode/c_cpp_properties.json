@@ -5,7 +5,8 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "/usr/include/serd-0/",
-                "/usr/include/lv2"
+                "/usr/include/lv2",
+                "/usr/include/gtk-3.0/"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/clang",

@@ -123,7 +123,12 @@ bool Plugin::loadControls() {
 }
 
 int Plugin::process (float *in, float *out, int nframes) {
-    IN
+    if (! enabled) {
+        // bypass processing, copy input to output
+        memcpy(out, in, nframes * sizeof(float));
+        return 0;
+    }
+    
     if (audioIn == -1 || audioOut == -1) {
         LOGE("Audio ports not connected\n");
         return -1;
