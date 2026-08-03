@@ -2,9 +2,12 @@
 #define __LOLA_H__
 
 #include <lv2.h>
+#include <lv2/atom/atom.h>
 #include <lv2/buf-size/buf-size.h>
+#include <lv2/options/options.h>
 #include <lv2/patch/patch.h>
 #include <lv2/state/state.h>
+#include <lv2/urid/urid.h>
 #include <lv2/uri-map/uri-map.h>
 #include <lv2/worker/worker.h>
 #include <string>
@@ -26,6 +29,7 @@ typedef enum {
     lFILE,
     lTOGGLE,
     lTRIGGER,
+    lUNKNOWN
 } PortType;
 
 class Control {
@@ -37,6 +41,7 @@ public:
     float def;
     float * value;
     std::string name;
+    bool input;
 };
 
 class Plugin {
@@ -61,6 +66,7 @@ public:
     LV2_Handle handle;
 
     std::vector<Control> controls;
+    std::vector<Control> monitorControls;
     std::vector<LV2_Feature> featureEntries;
     std::queue<std::pair<uint32_t, std::vector<uint8_t>>> workerQueue;
     std::queue<std::string> patchQueue;
@@ -77,6 +83,7 @@ public:
     // atom port for sending file names
     int atomPort = -1;
     void * atomBuffer = nullptr;
+    std::unordered_map<int, void*> atomPortBuffers;
 
     Plugin(std::string config, int index, int sampleRate, int bufferSize = 0);
     ~Plugin();
@@ -103,6 +110,17 @@ private:
         uint32_t nominalBlockLength = 0;
     };
 
+    struct OptionsData {
+        uint32_t minBlockLength = 1;
+        uint32_t maxBlockLength = 0;
+        uint32_t nominalBlockLength = 0;
+        uint32_t atomIntType = 0;
+        uint32_t minKey = 0;
+        uint32_t maxKey = 0;
+        uint32_t nominalKey = 0;
+        LV2_Options_Option entries[4]{};
+    };
+
     struct WorkerData {
         Plugin *plugin = nullptr;
         std::vector<std::pair<uint32_t, std::vector<uint8_t>>> pending;
@@ -118,14 +136,18 @@ private:
     static uint32_t uriToIdCallback(LV2_URI_Map_Callback_Data callback_data,
                                     const char *map,
                                     const char *uri);
+    static LV2_URID uridMapCallback(LV2_URID_Map_Handle handle,
+                                    const char *uri);
     static LV2_Worker_Status scheduleWorkCallback(LV2_Worker_Schedule_Handle handle,
                                                  uint32_t size,
                                                  const void *data);
     void buildFeatureList();
 
     UriMapData *uriMapData = nullptr;
+    LV2_URID_Map uridMapFeature{};
     LV2_URI_Map_Feature uriMapFeature{};
     BufferSizeData bufferSizeData{};
+    OptionsData optionsData{};
     LV2_Worker_Schedule workerScheduleFeature{};
     WorkerData workerData{};
     std::unordered_map<uint32_t, StateEntry> stateMap;

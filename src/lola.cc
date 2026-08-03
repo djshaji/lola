@@ -1,6 +1,7 @@
 #include "lola.h"
 
 #include <cstdlib>
+#include <filesystem>
 
 using json = nlohmann::json;
 
@@ -21,6 +22,13 @@ Plugin::~Plugin() {
         free(atomBuffer);
         atomBuffer = nullptr;
     }
+
+    for (auto &[portIndex, buffer] : atomPortBuffers) {
+        if (buffer != nullptr) {
+            free(buffer);
+        }
+    }
+    atomPortBuffers.clear();
 
     if (uriMapData != nullptr) {
         delete uriMapData;
@@ -54,8 +62,8 @@ void Plugin::buildFeatureList() {
     bufferSizeData.maxBlockLength = hostBufferSize > 0 ? static_cast<uint32_t>(hostBufferSize) : 0;
     bufferSizeData.nominalBlockLength = hostBufferSize > 0 ? static_cast<uint32_t>(hostBufferSize) : 0;
 
-    featureUris.emplace_back(LV2_BUF_SIZE_URI);
-    featureEntries.push_back(LV2_Feature{featureUris.back().c_str(), &bufferSizeData});
+    featureUris.emplace_back(LV2_BUF_SIZE__boundedBlockLength);
+    featureEntries.push_back(LV2_Feature{featureUris.back().c_str(), nullptr});
 
     workerData.plugin = this;
     workerScheduleFeature.handle = &workerData;
@@ -67,6 +75,52 @@ void Plugin::buildFeatureList() {
     if (uriMapData == nullptr) {
         uriMapData = new UriMapData();
     }
+
+    optionsData.minBlockLength = bufferSizeData.minBlockLength;
+    optionsData.maxBlockLength = bufferSizeData.maxBlockLength;
+    optionsData.nominalBlockLength = bufferSizeData.nominalBlockLength;
+    optionsData.atomIntType = mapUri(LV2_ATOM__Int);
+    optionsData.minKey = mapUri(LV2_BUF_SIZE__minBlockLength);
+    optionsData.maxKey = mapUri(LV2_BUF_SIZE__maxBlockLength);
+    optionsData.nominalKey = mapUri(LV2_BUF_SIZE__nominalBlockLength);
+
+    optionsData.entries[0] = LV2_Options_Option{
+        LV2_OPTIONS_INSTANCE,
+        0,
+        optionsData.minKey,
+        sizeof(optionsData.minBlockLength),
+        optionsData.atomIntType,
+        &optionsData.minBlockLength
+    };
+
+    optionsData.entries[1] = LV2_Options_Option{
+        LV2_OPTIONS_INSTANCE,
+        0,
+        optionsData.maxKey,
+        sizeof(optionsData.maxBlockLength),
+        optionsData.atomIntType,
+        &optionsData.maxBlockLength
+    };
+
+    optionsData.entries[2] = LV2_Options_Option{
+        LV2_OPTIONS_INSTANCE,
+        0,
+        optionsData.nominalKey,
+        sizeof(optionsData.nominalBlockLength),
+        optionsData.atomIntType,
+        &optionsData.nominalBlockLength
+    };
+
+    optionsData.entries[3] = LV2_Options_Option{};
+
+    featureUris.emplace_back(LV2_OPTIONS__options);
+    featureEntries.push_back(LV2_Feature{featureUris.back().c_str(), optionsData.entries});
+
+    uridMapFeature.handle = uriMapData;
+    uridMapFeature.map = &Plugin::uridMapCallback;
+
+    featureUris.emplace_back(LV2_URID__map);
+    featureEntries.push_back(LV2_Feature{featureUris.back().c_str(), &uridMapFeature});
 
     uriMapFeature.callback_data = uriMapData;
     uriMapFeature.uri_to_id = &Plugin::uriToIdCallback;
@@ -99,7 +153,22 @@ Plugin::Plugin(std::string config, int index, int sampleRate, int bufferSize) {
     this->sampleRate = sampleRate;
     this->hostBufferSize = bufferSize;
 
-    dlhandle = dlopen(sofile.c_str(), RTLD_NOW);
+    const std::filesystem::path configPath(config);
+    std::filesystem::path bundlePath = this->bundle.empty()
+        ? configPath.parent_path()
+        : std::filesystem::path(this->bundle);
+    if (bundlePath.empty()) {
+        bundlePath = std::filesystem::current_path();
+    }
+    this->bundle = bundlePath.string();
+
+    std::filesystem::path libraryPath(this->sofile);
+    if (libraryPath.is_relative()) {
+        libraryPath = bundlePath / libraryPath;
+    }
+    this->sofile = libraryPath.string();
+
+    dlhandle = dlopen(this->sofile.c_str(), RTLD_NOW);
     if (!dlhandle) {
         LOGE("Failed to load shared library: %s\n", sofile.c_str());
         return;
@@ -122,7 +191,7 @@ Plugin::Plugin(std::string config, int index, int sampleRate, int bufferSize) {
 
     buildFeatureList();
 
-    const char *bundle_path = bundle.empty() ? nullptr : bundle.c_str();
+    const char *bundle_path = this->bundle.empty() ? nullptr : this->bundle.c_str();
     handle = descriptor->instantiate(descriptor, sampleRate, bundle_path,
                                      featurePointers.empty() ? nullptr : featurePointers.data());
     if (!handle) {
@@ -183,6 +252,26 @@ uint32_t Plugin::uriToIdCallback(LV2_URI_Map_Callback_Data callback_data,
     }
 
     auto *data = static_cast<UriMapData *>(callback_data);
+    const std::string uriValue(uri);
+
+    auto it = data->uriToUrid.find(uriValue);
+    if (it != data->uriToUrid.end()) {
+        return it->second;
+    }
+
+    const uint32_t id = data->nextUrid++;
+    data->uriToUrid[uriValue] = id;
+    data->uridToUri[id] = uriValue;
+    return id;
+}
+
+LV2_URID Plugin::uridMapCallback(LV2_URID_Map_Handle handle,
+                                 const char *uri) {
+    if (handle == nullptr || uri == nullptr) {
+        return 0;
+    }
+
+    auto *data = static_cast<UriMapData *>(handle);
     const std::string uriValue(uri);
 
     auto it = data->uriToUrid.find(uriValue);
@@ -278,7 +367,12 @@ bool Plugin::loadControls() {
         Control control;
 
         std::string type = port["type"];
+        const std::string name = port.value("name", "");
+        const std::string symbol = port.value("symbol", "");
+        control.input = (port["direction"] == "input");
+
         LOGD("Loading port: %s, type: %s\n", port["name"].get<std::string>().c_str(), type.c_str());
+        const bool isAtomPort = type == "atom" || (type == "other" && (name == "CONTROL" || name == "NOTIFY" || symbol == "CONTROL" || symbol == "NOTIFY"));
         if (type == "control") {
             control.type = PortType::lCONTROL;
         } else if (type == "audio") {
@@ -287,12 +381,38 @@ bool Plugin::loadControls() {
             control.type = PortType::lMIDI;
         } else if (type == "file") {
             control.type = PortType::lFILE;
+        } else if (isAtomPort) {
+            control.type = PortType::lUNKNOWN;
+            control.index = index++;
+            control.name = port["name"];
+            control.min = 0.0f;
+            control.max = 1.0f;
+            control.def = 0.0f;
+            control.value = nullptr;
+
+            void *buffer = calloc(1, MAX_SAMPLES);
+            if (buffer != nullptr) {
+                atomPortBuffers[control.index] = buffer;
+                descriptor->connect_port(handle, control.index, buffer);
+            } else {
+                LOGE("Failed to allocate atom buffer for port: %s\n", control.name.c_str());
+            }
+            continue;
         } else if (type == "toggle") {
             control.type = PortType::lTOGGLE;
         } else if (type == "trigger") {
             control.type = PortType::lTRIGGER;
         } else {
             LOGE("Unknown port type: %s\n", type.c_str());
+            control.type = PortType::lUNKNOWN;
+            control.index = index++;
+            control.name = port["name"];
+            control.min = 0.0f;
+            control.max = 1.0f;
+            control.def = 0.0f;
+            control.value = new float(control.def);
+            descriptor->connect_port(handle, control.index, control.value);
+            monitorControls.push_back(control);
             continue;
         }
 
@@ -324,18 +444,24 @@ bool Plugin::loadControls() {
             continue;
         }
 
-        control.min = port["minimum"];
-        control.max = port["maximum"];
-        control.def = port["default"];
-        control.value = new float(control.def);
-        control.name = port["name"];
+        if (control.input) {
+            control.min = port["minimum"];
+            control.max = port["maximum"];
+            control.def = port["default"];
+            control.value = new float(control.def);
+            control.name = port["name"];
 
-        descriptor->connect_port(handle, control.index, control.value);
+            descriptor->connect_port(handle, control.index, control.value);
 
-        controls.push_back(control);
+            controls.push_back(control);
+        } else {
+            LOGD("Ignoring output control port: %s\n", port["name"].get<std::string>().c_str());
+        }
     }
  
+    LOGD("Loaded %zu controls for plugin: %s\n", controls.size(), sofile.c_str());
     restoreState();
+    LOGD("Restored state for plugin: %s\n", sofile.c_str());
     descriptor->activate(handle);
     LOGD("Plugin loaded successfully\n");
     return true;

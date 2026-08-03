@@ -145,6 +145,7 @@ int main(int argc, char **argv) {
     }), plugin);
 
     for (auto &control : plugin->controls) {
+        LOGD("Creating control: %s, type: %d\n", control.name.c_str(), static_cast<int>(control.type));
         GtkWidget *label = gtk_label_new(control.name.c_str());
         gtk_box_pack_start(GTK_BOX(vbox), label, FALSE, FALSE, 0);
         switch (control.type) {
@@ -181,6 +182,7 @@ int main(int argc, char **argv) {
     }
 
     // Main execution thread idles here while the real-time thread runs
+    LOGD("Entering GTK main loop\n");
     gtk_widget_show_all(window);
     gtk_main();
     return 0;

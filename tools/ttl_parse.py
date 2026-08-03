@@ -9,6 +9,7 @@ from rdflib.namespace import RDF
 
 
 LV2 = Namespace("http://lv2plug.in/ns/lv2core#")
+ATOM = Namespace("http://lv2plug.in/ns/ext/atom#")
 DOAP = Namespace("http://usefulinc.com/ns/doap#")
 FOAF = Namespace("http://xmlns.com/foaf/0.1/")
 
@@ -55,7 +56,7 @@ def _port_type(graph, port_node):
         return "audio"
     if (port_node, RDF.type, LV2.ControlPort) in graph:
         return "control"
-    if (port_node, RDF.type, LV2.AtomPort) in graph:
+    if (port_node, RDF.type, ATOM.AtomPort) in graph:
         return "atom"
     if (port_node, RDF.type, LV2.EventPort) in graph:
         return "event"

@@ -4,63 +4,34 @@ Guidance for AI coding agents working in this repository.
 
 ## Project Snapshot
 
-- Project: LV2 Loader (C++)
-- Goal: Load LV2 plugins, inspect metadata, and instantiate plugin handles
-- Primary reference: [Readme.md](Readme.md)
+- Project: LV2 loader in C++.
+- Goal: load LV2 plugins, inspect metadata, and instantiate plugin handles.
+- Primary references: [Readme.md](Readme.md), [src/lola.h](src/lola.h), [src/lola.cc](src/lola.cc), and [tools/ttl_parse.py](tools/ttl_parse.py).
 
-## Build, Run, and Test Reality
+## Working Conventions
 
-- `src/Makefile` exists but is currently empty.
-- There is no verified build command, no CI config, and no test harness in this repo.
-- Do not assume `make`, `cmake`, or tests exist.
-- If a task requires building or testing, either:
-  - implement the requested build/test setup as part of that task, or
-  - state clearly that no build/test command is currently available.
+- Keep changes focused and minimal. Preserve the existing public API unless the task explicitly requests a change.
+- C++ work should stay in the header/source split under [src](src) and follow the current style:
+  - include guards in headers
+  - logging through the macros in [src/log.h](src/log.h)
+  - explicit cleanup for resource ownership, especially around plugin lifecycle and `dlopen`/`dlclose`
+- The TTL parser helper in [tools/ttl_parse.py](tools/ttl_parse.py) should make small, explicit RDF extraction changes and keep its JSON output shape stable.
 
-## Code Map
+## Build and Validation
 
-- `src/lola.h`: Core model types
-  - `PortType` enum
-  - `Control` class (currently only fields)
-  - `Plugin` class declaration and constructor signature
-- `src/lola.cc`: `Plugin` constructor implementation
-  - `dlopen` shared object
-  - `dlsym("lv2_descriptor")`
-  - instantiate LV2 plugin handle
-- `src/log.h`: Linux-only logging macros (`LOGE`, `LOGI`, `LOGD`, `HERE`)
-- `src/main.cc`: Minimal scaffold executable
+- Verified commands:
+  - `cd src && make` builds the demo host.
+  - `python3 tests/validate_features.py` validates the fixture expectations.
+- The Makefile depends on JACK and GTK development headers being available, so build failures may reflect missing system packages rather than a code issue.
+- This repository does not currently have a broader CI or test harness, so do not assume one exists.
 
-## Conventions to Follow
+## Important Implementation Notes
 
-- Language/style follows existing C++ patterns:
-  - Header/source split with `.h` and `.cc`
-  - Include guards in headers
-  - Internal logging through `LOG*` macros
-- Keep changes minimal and targeted. Avoid broad refactors unless requested.
-- Preserve current public API shape unless the task explicitly asks for API changes.
-- When working on the TTL parsing helper in [tools/ttl_parse.py](tools/ttl_parse.py), prefer small, explicit RDF extraction changes and verify them with `python tools/ttl_parse.py <file-or-bundle>`.
+- The plugin lifecycle is safety-sensitive: `Plugin` owns shared library loading, instantiation, and cleanup. Prefer RAII-style cleanup and avoid leaks when adding lifecycle logic.
+- [src/lola.h](src/lola.h) already declares `Control` and other plugin state, but the implementation is still partial. Keep changes conservative around those areas.
+- Fixture data in [tests/fixtures](tests/fixtures) is useful when validating LV2 feature handling and parser behavior.
 
-## Practical Repo Notes
-
-- The main C++ implementation lives in [src](src); the Python helper in [tools/ttl_parse.py](tools/ttl_parse.py) is supplemental and should not be treated as the primary runtime path.
-- LV2 bundles in [src/dyson_compress-swh.lv2](src/dyson_compress-swh.lv2) are useful fixtures for testing parser behavior.
-- There is no verified build or test harness yet, so do not claim compilation or test success without running a command and reporting the actual result.
-
-## Safety and Correctness Priorities
-
-- Treat plugin lifecycle/resource handling as high risk:
-  - `dlopen`/`dlclose`
-  - LV2 instantiate/cleanup pairing
-- Prefer explicit error handling over silent failures.
-- When adding lifecycle logic, favor RAII-style cleanup to prevent leaks.
-
-## Common Pitfalls in This Repo
-
-- `Plugin` currently has constructor-side acquisition but no visible destructor cleanup.
-- `Control` is declared but functionally incomplete.
-- Build/test instructions in docs are limited; avoid inventing commands as facts.
-
-## Documentation Linking Rule
+## Documentation
 
 - Link to existing docs instead of duplicating them:
   - [Readme.md](Readme.md)
