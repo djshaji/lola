@@ -142,6 +142,7 @@ private:
                                                  uint32_t size,
                                                  const void *data);
     void buildFeatureList();
+    bool sendFileNameToAtomPort(int port, const std::string &filename);
 
     UriMapData *uriMapData = nullptr;
     LV2_URID_Map uridMapFeature{};

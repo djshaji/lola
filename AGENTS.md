@@ -38,6 +38,18 @@ Guidance for AI coding agents working in this repository.
 - Prefer validating feature changes with [tests/validate_features.py](tests/validate_features.py) before touching broader loader behavior.
 - Keep generated bundle JSON stable in shape; when changing parser output, update fixtures in [tests/fixtures](tests/fixtures) intentionally.
 
+## Port Wiring Safety
+
+- Treat LV2 port connectivity as mandatory before `run()`: connect every declared plugin port to valid host memory, including output control ports and atom ports.
+- Do not leave output control ports unconnected; plugin code may write to those pointers during processing.
+- [src/main.cc](src/main.cc) currently exposes one JACK input and one JACK output port. Do not infer a second channel by offsetting a single JACK buffer pointer.
+- When plugin stereo ports exist but host side is mono, connect secondary ports to valid fallback buffers until true multi-port JACK wiring is implemented.
+
+## Session Hygiene
+
+- In long debugging chats, compact periodically (for example with `/compact`) after confirming a repro or a fix direction.
+- Preserve a short running note of repro command, observed failure, and latest result so follow-up turns stay focused.
+
 ## Documentation
 
 - Link to existing docs instead of duplicating them:

@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <lv2/atom/util.h>
 
 using json = nlohmann::json;
 
@@ -503,4 +504,54 @@ int Plugin::process (float *in, float *out, int nframes) {
 
     descriptor->run(handle, frames);
     return 0;
+}
+
+bool Plugin::sendFileNameToAtomPort(int port, const std::string &filename) {
+    if (port < 0 || atomPortBuffers.find(port) == atomPortBuffers.end()) {
+        LOGE("Invalid atom port index: %d\n", port);
+        return false;
+    }
+
+    void *buffer = atomPortBuffers[port];
+    if (buffer == nullptr) {
+        LOGE("Atom buffer not allocated for port: %d\n", port);
+        return false;
+    }
+
+    if (filename.empty()) {
+        LOGE("Empty filename for atom port: %d\n", port);
+        return false;
+    }
+
+    auto *seq = static_cast<LV2_Atom_Sequence *>(buffer);
+    std::memset(buffer, 0, MAX_SAMPLES);
+
+    const uint32_t payloadSize = static_cast<uint32_t>(filename.size() + 1); // include trailing NUL
+    const uint32_t paddedPayloadSize = lv2_atom_pad_size(payloadSize);
+    const uint32_t eventSize = static_cast<uint32_t>(sizeof(LV2_Atom_Event)) + paddedPayloadSize;
+    const uint32_t required = static_cast<uint32_t>(sizeof(LV2_Atom_Sequence)) + eventSize;
+    if (required > MAX_SAMPLES) {
+        LOGE("Filename too large for atom buffer on port %d: %zu bytes\n", port, filename.size());
+        return false;
+    }
+
+    seq->atom.type = mapUri(LV2_ATOM__Sequence);
+    seq->atom.size = sizeof(LV2_Atom_Sequence_Body);
+    seq->body.unit = 0; // frame time
+    seq->body.pad = 0;
+
+    auto *event = reinterpret_cast<LV2_Atom_Event *>(reinterpret_cast<uint8_t *>(seq) + sizeof(LV2_Atom_Sequence));
+    event->time.frames = 0;
+    event->body.type = mapUri(LV2_ATOM__Path);
+    event->body.size = payloadSize;
+
+    char *pathBody = reinterpret_cast<char *>(event + 1);
+    std::memcpy(pathBody, filename.c_str(), payloadSize);
+    if (paddedPayloadSize > payloadSize) {
+        std::memset(pathBody + payloadSize, 0, paddedPayloadSize - payloadSize);
+    }
+
+    seq->atom.size += static_cast<uint32_t>(sizeof(LV2_Atom_Event)) + paddedPayloadSize;
+    LOGD("Queued atom path on port %d: %s\n", port, filename.c_str());
+    return true;
 }
