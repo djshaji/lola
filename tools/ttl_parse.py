@@ -12,6 +12,9 @@ LV2 = Namespace("http://lv2plug.in/ns/lv2core#")
 ATOM = Namespace("http://lv2plug.in/ns/ext/atom#")
 DOAP = Namespace("http://usefulinc.com/ns/doap#")
 FOAF = Namespace("http://xmlns.com/foaf/0.1/")
+RDFS = Namespace("http://www.w3.org/2000/01/rdf-schema#")
+PATCH = Namespace("http://lv2plug.in/ns/ext/patch#")
+MOD = Namespace("http://moddevices.com/ns/mod#")
 
 
 def _literal_value(node):
@@ -70,6 +73,35 @@ def _maintainer_name(graph, plugin_uri):
     return graph.value(maintainer, FOAF.name)
 
 
+def _binary_value(node):
+    value = _literal_value(node)
+    if value is None:
+        return ""
+
+    value = str(value)
+    if value.startswith("file://"):
+        return Path(value[7:]).name
+    return value
+
+
+def _path_properties(graph, plugin_uri):
+    properties = []
+    for writable in graph.objects(plugin_uri, PATCH.writable):
+        if (writable, RDFS.range, ATOM.Path) not in graph:
+            continue
+
+        file_types = _literal_value(graph.value(writable, MOD.fileTypes))
+        property_info = {
+            "uri": str(writable),
+            "label": str(_literal_value(graph.value(writable, RDFS.label)) or ""),
+            "fileTypes": str(file_types or ""),
+        }
+        properties.append({k: v for k, v in property_info.items() if v not in (None, "")})
+
+    properties.sort(key=lambda item: item.get("uri", ""))
+    return properties
+
+
 def parse_lv2_ttl_to_json(path):
     graph = _load_graph(path)
     plugins_json = []
@@ -80,8 +112,9 @@ def parse_lv2_ttl_to_json(path):
             "name": str(_literal_value(graph.value(plugin_uri, DOAP.name) or graph.value(plugin_uri, LV2.name)) or ""),
             "description": str(_literal_value(graph.value(plugin_uri, DOAP.description)) or ""),
             "author": str(_literal_value(_maintainer_name(graph, plugin_uri) or graph.value(plugin_uri, FOAF.name)) or ""),
-            "binary": str(_literal_value(graph.value(plugin_uri, LV2.binary)) or ""),
+            "binary": _binary_value(graph.value(plugin_uri, LV2.binary)),
             "ports": [],
+            "pathProperties": _path_properties(graph, plugin_uri),
         }
 
         for port_node in graph.objects(plugin_uri, LV2.port):

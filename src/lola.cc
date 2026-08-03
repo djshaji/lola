@@ -274,6 +274,19 @@ uint32_t Plugin::uriToIdCallback(LV2_URI_Map_Callback_Data callback_data,
     return id;
 }
 
+void Plugin::resetAtomPortBuffer(void *buffer) {
+    if (buffer == nullptr) {
+        return;
+    }
+
+    std::memset(buffer, 0, MAX_SAMPLES);
+    auto *seq = static_cast<LV2_Atom_Sequence *>(buffer);
+    seq->atom.type = mapUri(LV2_ATOM__Sequence);
+    seq->atom.size = sizeof(LV2_Atom_Sequence_Body);
+    seq->body.unit = 0;
+    seq->body.pad = 0;
+}
+
 LV2_URID Plugin::uridMapCallback(LV2_URID_Map_Handle handle,
                                  const char *uri) {
     if (handle == nullptr || uri == nullptr) {
@@ -401,8 +414,12 @@ bool Plugin::loadControls() {
 
             void *buffer = calloc(1, MAX_SAMPLES);
             if (buffer != nullptr) {
+                resetAtomPortBuffer(buffer);
                 atomPortBuffers[control.index] = buffer;
                 descriptor->connect_port(handle, control.index, buffer);
+                if (control.input && atomPort == -1) {
+                    atomPort = control.index;
+                }
             } else {
                 LOGE("Failed to allocate atom buffer for port: %s\n", control.name.c_str());
             }
@@ -469,6 +486,30 @@ bool Plugin::loadControls() {
             LOGD("Connected output control port: %s\n", control.name.c_str());
         }
     }
+
+    if (j.contains("pathProperties") && j["pathProperties"].is_array()) {
+        for (const auto &property : j["pathProperties"]) {
+            if (atomPort == -1) {
+                LOGE("No input atom port available for file property: %s\n",
+                     property.value("uri", "").c_str());
+                break;
+            }
+
+            Control fileControl;
+            fileControl.type = PortType::lFILE;
+            fileControl.index = atomPort;
+            fileControl.min = 0.0f;
+            fileControl.max = 0.0f;
+            fileControl.def = 0.0f;
+            fileControl.value = nullptr;
+            fileControl.input = true;
+            fileControl.plugin = this;
+            fileControl.name = property.value("label", property.value("uri", "File"));
+            fileControl.propertyUri = property.value("uri", "");
+            fileControl.fileTypes = property.value("fileTypes", "");
+            controls.push_back(fileControl);
+        }
+    }
  
     LOGD("Loaded %zu controls for plugin: %s\n", controls.size(), sofile.c_str());
     restoreState();
@@ -495,6 +536,12 @@ int Plugin::process (float *in, float *out, int nframes) {
     descriptor->connect_port(handle, audioIn, in);
     descriptor->connect_port(handle, audioOut, out);
 
+    for (auto &[portIndex, buffer] : atomPortBuffers) {
+        if (portIndex != atomPort) {
+            resetAtomPortBuffer(buffer);
+        }
+    }
+
     if (audioIn2 != -1 && audioOut2 != -1) {
         // main.cc currently exposes a single input/output JACK port.
         // Mirror mono buffers to secondary plugin audio ports instead of indexing past the JACK buffer.
@@ -503,10 +550,15 @@ int Plugin::process (float *in, float *out, int nframes) {
     }
 
     descriptor->run(handle, frames);
+
+    auto atomInput = atomPortBuffers.find(atomPort);
+    if (atomInput != atomPortBuffers.end()) {
+        resetAtomPortBuffer(atomInput->second);
+    }
     return 0;
 }
 
-bool Plugin::sendFileNameToAtomPort(int port, const std::string &filename) {
+bool Plugin::sendFileNameToAtomPort(int port, const std::string &propertyUri, const std::string &filename) {
     if (port < 0 || atomPortBuffers.find(port) == atomPortBuffers.end()) {
         LOGE("Invalid atom port index: %d\n", port);
         return false;
@@ -518,40 +570,71 @@ bool Plugin::sendFileNameToAtomPort(int port, const std::string &filename) {
         return false;
     }
 
+    if (propertyUri.empty()) {
+        LOGE("Empty property URI for atom port: %d\n", port);
+        return false;
+    }
+
     if (filename.empty()) {
         LOGE("Empty filename for atom port: %d\n", port);
         return false;
     }
 
-    auto *seq = static_cast<LV2_Atom_Sequence *>(buffer);
-    std::memset(buffer, 0, MAX_SAMPLES);
+    resetAtomPortBuffer(buffer);
 
-    const uint32_t payloadSize = static_cast<uint32_t>(filename.size() + 1); // include trailing NUL
-    const uint32_t paddedPayloadSize = lv2_atom_pad_size(payloadSize);
-    const uint32_t eventSize = static_cast<uint32_t>(sizeof(LV2_Atom_Event)) + paddedPayloadSize;
+    auto *seq = static_cast<LV2_Atom_Sequence *>(buffer);
+    const uint32_t objectType = mapUri(LV2_ATOM__Object);
+    const uint32_t patchSetType = mapUri(LV2_PATCH__Set);
+    const uint32_t patchPropertyKey = mapUri(LV2_PATCH__property);
+    const uint32_t patchValueKey = mapUri(LV2_PATCH__value);
+    const uint32_t uridType = mapUri(LV2_ATOM__URID);
+    const uint32_t pathType = mapUri(LV2_ATOM__Path);
+    const uint32_t propertyUrid = mapUri(propertyUri);
+
+    const uint32_t uridValueSize = sizeof(uint32_t);
+    const uint32_t pathValueSize = static_cast<uint32_t>(filename.size() + 1);
+    const uint32_t propertyChunkSize = static_cast<uint32_t>(sizeof(LV2_Atom_Property_Body)) + lv2_atom_pad_size(uridValueSize);
+    const uint32_t valueChunkSize = static_cast<uint32_t>(sizeof(LV2_Atom_Property_Body)) + lv2_atom_pad_size(pathValueSize);
+    const uint32_t objectPayloadSize = static_cast<uint32_t>(sizeof(LV2_Atom_Object_Body)) + propertyChunkSize + valueChunkSize;
+    const uint32_t eventSize = static_cast<uint32_t>(sizeof(LV2_Atom_Event)) + lv2_atom_pad_size(objectPayloadSize);
     const uint32_t required = static_cast<uint32_t>(sizeof(LV2_Atom_Sequence)) + eventSize;
     if (required > MAX_SAMPLES) {
         LOGE("Filename too large for atom buffer on port %d: %zu bytes\n", port, filename.size());
         return false;
     }
 
-    seq->atom.type = mapUri(LV2_ATOM__Sequence);
-    seq->atom.size = sizeof(LV2_Atom_Sequence_Body);
-    seq->body.unit = 0; // frame time
-    seq->body.pad = 0;
-
     auto *event = reinterpret_cast<LV2_Atom_Event *>(reinterpret_cast<uint8_t *>(seq) + sizeof(LV2_Atom_Sequence));
     event->time.frames = 0;
-    event->body.type = mapUri(LV2_ATOM__Path);
-    event->body.size = payloadSize;
+    event->body.type = objectType;
+    event->body.size = objectPayloadSize;
 
-    char *pathBody = reinterpret_cast<char *>(event + 1);
-    std::memcpy(pathBody, filename.c_str(), payloadSize);
-    if (paddedPayloadSize > payloadSize) {
-        std::memset(pathBody + payloadSize, 0, paddedPayloadSize - payloadSize);
-    }
+    auto *object = reinterpret_cast<LV2_Atom_Object_Body *>(event + 1);
+    object->id = 0;
+    object->otype = patchSetType;
 
-    seq->atom.size += static_cast<uint32_t>(sizeof(LV2_Atom_Event)) + paddedPayloadSize;
-    LOGD("Queued atom path on port %d: %s\n", port, filename.c_str());
+    uint8_t *cursor = reinterpret_cast<uint8_t *>(object + 1);
+    auto appendProperty = [](uint8_t *dest, uint32_t key, uint32_t valueType, const void *value, uint32_t valueSize) {
+        auto *property = reinterpret_cast<LV2_Atom_Property_Body *>(dest);
+        property->key = key;
+        property->context = 0;
+        property->value.type = valueType;
+        property->value.size = valueSize;
+
+        uint8_t *body = reinterpret_cast<uint8_t *>(property) + sizeof(LV2_Atom_Property_Body);
+        std::memcpy(body, value, valueSize);
+
+        const uint32_t paddedSize = lv2_atom_pad_size(valueSize);
+        if (paddedSize > valueSize) {
+            std::memset(body + valueSize, 0, paddedSize - valueSize);
+        }
+
+        return body + paddedSize;
+    };
+
+    cursor = appendProperty(cursor, patchPropertyKey, uridType, &propertyUrid, uridValueSize);
+    cursor = appendProperty(cursor, patchValueKey, pathType, filename.c_str(), pathValueSize);
+
+    seq->atom.size += eventSize;
+    LOGD("Queued patch:Set on atom port %d for %s -> %s\n", port, propertyUri.c_str(), filename.c_str());
     return true;
 }

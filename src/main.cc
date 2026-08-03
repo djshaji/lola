@@ -165,18 +165,22 @@ int main(int argc, char **argv) {
             case lAUDIO:
             case lMIDI:
                 break;
-            case lFILE:
-                GtkWidget *file_button = gtk_file_chooser_button_new("Select File", GTK_FILE_CHOOSER_ACTION_OPEN);
+            case lFILE: {
+                GtkWidget *file_button = gtk_file_chooser_button_new(control.name.c_str(), GTK_FILE_CHOOSER_ACTION_OPEN);
                 g_signal_connect(file_button, "file-set", G_CALLBACK(+[](GtkFileChooser *chooser, gpointer user_data) {
                     Control *control = static_cast<Control *>(user_data);
                     char *filename = gtk_file_chooser_get_filename(chooser);
-                    // send filename to plugin via atom port
-                    if (control->value != nullptr) {
-                        // copy filename to atomBuffer
-                        strncpy((char *)control->value, filename, MAX_SAMPLES);
+                    if (filename != nullptr && control->plugin != nullptr) {
+                        if (!control->plugin->sendFileNameToAtomPort(control->index, control->propertyUri, filename)) {
+                            LOGE("Failed to send file path for %s\n", control->name.c_str());
+                        }
                     }
+                    g_free(filename);
                 }), &control);
                 gtk_box_pack_start(GTK_BOX(vbox), file_button, FALSE, FALSE, 0);
+                break;
+            }
+            case lUNKNOWN:
                 break;
         }
     }

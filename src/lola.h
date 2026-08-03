@@ -32,6 +32,8 @@ typedef enum {
     lUNKNOWN
 } PortType;
 
+class Plugin;
+
 class Control {
 public:
     PortType type;
@@ -41,7 +43,10 @@ public:
     float def;
     float * value;
     std::string name;
+    std::string propertyUri;
+    std::string fileTypes;
     bool input;
+    Plugin *plugin = nullptr;
 };
 
 class Plugin {
@@ -96,6 +101,7 @@ public:
     void restoreState();
     void queuePatch(const std::string &message);
     void drainPatchQueue();
+    bool sendFileNameToAtomPort(int port, const std::string &propertyUri, const std::string &filename);
 
 private:
     struct UriMapData {
@@ -142,7 +148,7 @@ private:
                                                  uint32_t size,
                                                  const void *data);
     void buildFeatureList();
-    bool sendFileNameToAtomPort(int port, const std::string &filename);
+    void resetAtomPortBuffer(void *buffer);
 
     UriMapData *uriMapData = nullptr;
     LV2_URID_Map uridMapFeature{};
