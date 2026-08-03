@@ -20,9 +20,14 @@ Guidance for AI coding agents working in this repository.
 ## Build and Validation
 
 - Verified commands:
-  - `cd src && make` builds the demo host.
-  - `python3 tests/validate_features.py` validates the fixture expectations.
+  - `cd src && make` builds `main` and `repro_ratatouille`.
+  - `cd src && ./repro_ratatouille` runs the Ratatouille smoke repro.
+  - `python3 tests/validate_features.py` validates fixture expectations.
+- TTL parser usage:
+  - `python3 tools/ttl_parse.py src/Ratatouille.lv2 > src/Ratatouille.lv2/Ratatouille.json`
+  - `python3 tools/ttl_parse.py src/dyson_compress-swh.lv2 > src/dyson_compress-swh.lv2/plugin.json`
 - The Makefile depends on JACK and GTK development headers being available, so build failures may reflect missing system packages rather than a code issue.
+- The parser and fixture validator require `rdflib` in the Python environment.
 - This repository does not currently have a broader CI or test harness, so do not assume one exists.
 
 ## Important Implementation Notes
@@ -30,6 +35,8 @@ Guidance for AI coding agents working in this repository.
 - The plugin lifecycle is safety-sensitive: `Plugin` owns shared library loading, instantiation, and cleanup. Prefer RAII-style cleanup and avoid leaks when adding lifecycle logic.
 - [src/lola.h](src/lola.h) already declares `Control` and other plugin state, but the implementation is still partial. Keep changes conservative around those areas.
 - Fixture data in [tests/fixtures](tests/fixtures) is useful when validating LV2 feature handling and parser behavior.
+- Prefer validating feature changes with [tests/validate_features.py](tests/validate_features.py) before touching broader loader behavior.
+- Keep generated bundle JSON stable in shape; when changing parser output, update fixtures in [tests/fixtures](tests/fixtures) intentionally.
 
 ## Documentation
 

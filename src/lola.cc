@@ -14,6 +14,14 @@ Plugin::~Plugin() {
     }
     controls.clear();
 
+    for (auto &control : monitorControls) {
+        if (control.value != nullptr) {
+            delete control.value;
+            control.value = nullptr;
+        }
+    }
+    monitorControls.clear();
+
     if (handle != nullptr && descriptor != nullptr && descriptor->cleanup != nullptr) {
         descriptor->cleanup(handle);
     }
@@ -444,18 +452,20 @@ bool Plugin::loadControls() {
             continue;
         }
 
+        control.min = port.value("minimum", 0.0f);
+        control.max = port.value("maximum", 1.0f);
+        control.def = port.value("default", control.min);
+        control.value = new float(control.def);
+        control.name = port.value("name", "");
+
+        descriptor->connect_port(handle, control.index, control.value);
+
         if (control.input) {
-            control.min = port["minimum"];
-            control.max = port["maximum"];
-            control.def = port["default"];
-            control.value = new float(control.def);
-            control.name = port["name"];
-
-            descriptor->connect_port(handle, control.index, control.value);
-
             controls.push_back(control);
         } else {
-            LOGD("Ignoring output control port: %s\n", port["name"].get<std::string>().c_str());
+            // Output controls must still be connected or plugins may write through null port pointers.
+            monitorControls.push_back(control);
+            LOGD("Connected output control port: %s\n", control.name.c_str());
         }
     }
  
@@ -485,8 +495,10 @@ int Plugin::process (float *in, float *out, int nframes) {
     descriptor->connect_port(handle, audioOut, out);
 
     if (audioIn2 != -1 && audioOut2 != -1) {
-        descriptor->connect_port(handle, audioIn2, in + frames);
-        descriptor->connect_port(handle, audioOut2, out + frames);
+        // main.cc currently exposes a single input/output JACK port.
+        // Mirror mono buffers to secondary plugin audio ports instead of indexing past the JACK buffer.
+        descriptor->connect_port(handle, audioIn2, in);
+        descriptor->connect_port(handle, audioOut2, out);
     }
 
     descriptor->run(handle, frames);
